@@ -8,7 +8,7 @@ moc_*.cpp
 ui_*.h
 .*.sw?
 qrc_glogg.cpp
-Makefile
+!makefile
 glogg
 glogg_tests
 massif.out*
@@ -60,3 +60,13 @@ cmake-build-relwithdebinfo/
 #website
 website/hugo
 website/resources/
+
+build/
+build_root/
+cpm_cache/
+
+# Build script generated artifacts
+klogg-*-setup.exe
+release/
+chocolately/
+.clangd
