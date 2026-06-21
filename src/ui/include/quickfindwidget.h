@@ -65,6 +65,12 @@ class QuickFindWidget : public QWidget
     // when requested by the user (the widget won't timeout)
     void userActivate();
 
+    // Check if the widget is currently visible (for toggle behavior)
+    bool isActive() const;
+
+    // Close the widget programmatically (for toggle)
+    void closeWidget();
+
   public Q_SLOTS:
     // Instructs the widget to change the pattern displayed
     void changeDisplayedPattern( const QString& newPattern, bool isRegex );
@@ -73,11 +79,12 @@ class QuickFindWidget : public QWidget
     void notify( const QFNotification& message );
     // Clear the notification
     void clearNotification();
+    // Update the match count display "X / Y"
+    void updateMatchCount( int current, int total );
 
   private Q_SLOTS:
     void doSearchForward();
     void doSearchBackward();
-    void returnHandler();
     void closeHandler();
     void notificationTimeout();
     void textChanged();
@@ -96,6 +103,9 @@ class QuickFindWidget : public QWidget
     void searchBackward();
     void searchNext();
 
+  protected:
+    bool eventFilter( QObject* obj, QEvent* event ) override;
+
   private:
     QHBoxLayout* layout_;
 
@@ -104,11 +114,13 @@ class QuickFindWidget : public QWidget
     QToolButton* previousButton_;
     QLineEdit*   editQuickFind_;
     QCheckBox*   ignoreCaseCheck_;
+    QCheckBox*   regexCheck_;
+    QLabel*      matchCountLabel_;
     QLabel*      notificationText_;
 
     QToolButton* setupToolButton(const QString &text, const QString &icon);
     bool isIgnoreCase() const;
-    bool isRegexSearch() const;
+    bool isRegex() const;
 
     QTimer*      notificationTimer_;
 

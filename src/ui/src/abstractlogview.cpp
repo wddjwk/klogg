@@ -418,6 +418,10 @@ AbstractLogView::AbstractLogView( const AbstractLogData* newLogData,
              SIGNAL( notifyQuickFind( const QFNotification& ) ) );
     connect( quickFind_, SIGNAL( clearNotification() ), this,
              SIGNAL( clearQuickFindNotification() ) );
+    connect( quickFind_, SIGNAL( matchCountUpdated( int, int ) ), this,
+             SIGNAL( matchCountUpdated( int, int ) ), Qt::DirectConnection );
+    connect( quickFind_, SIGNAL( matchCountUpdated( int, int ) ), this,
+             SLOT( cacheMatchCount( int, int ) ), Qt::DirectConnection );
 
     connect( quickFind_, &QuickFind::searchDone, this, &AbstractLogView::setQuickFindResult,
              Qt::QueuedConnection );
@@ -1295,6 +1299,22 @@ void AbstractLogView::incrementalSearchStop()
     if ( selection_.isEmpty() ) {
         selection_ = oldSelection;
     }
+}
+
+void AbstractLogView::cacheMatchCount( int current, int total )
+{
+    lastMatchCurrent_ = current;
+    lastMatchTotal_ = total;
+}
+
+int AbstractLogView::getLastMatchCurrent() const
+{
+    return lastMatchCurrent_;
+}
+
+int AbstractLogView::getLastMatchTotal() const
+{
+    return lastMatchTotal_;
 }
 
 void AbstractLogView::allowFollowMode( bool allow )

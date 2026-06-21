@@ -45,6 +45,9 @@
 #include <QPoint>
 #include <QTime>
 
+#include <memory>
+#include <vector>
+
 #include "atomicflag.h"
 #include "linetypes.h"
 #include "qfnotifications.h"
@@ -98,6 +101,12 @@ class QuickFind : public QObject {
     Q_OBJECT
 
   public:
+    struct MatchInfo {
+        LineNumber line;
+        LineColumn startCol;
+        LineColumn endCol;
+    };
+
     // Construct a search
     explicit QuickFind( const AbstractLogData& logData );
 
@@ -106,6 +115,10 @@ class QuickFind : public QObject {
 
     // Make the object forget the 'no more match' flag.
     void resetLimits();
+
+    // Current match index (1-based for display) and total match count
+    int currentMatchIndex() const;
+    int totalMatches() const;
 
   public Q_SLOTS:
     // Used for incremental searches
@@ -138,10 +151,13 @@ class QuickFind : public QObject {
     void clearNotification();
     // Sent when search is completed
     void searchDone( bool hasMatch, Portion selection );
+    // Sent when match count changes (currentIndex is 1-based, 0 means no match)
+    void matchCountUpdated( int currentIndex, int totalCount );
 
   private Q_SLOTS:
     void sendNotification( QFNotification notification );
     void onSearchFutureReady();
+    void onScanFutureReady();
 
   private:
     enum QFDirection {
@@ -207,6 +223,16 @@ class QuickFind : public QObject {
         Selection initialSelection_;
     };
 
+    // Scan all matches in the file asynchronously
+    void scanAllMatches( const QuickFindMatcher& matcher );
+
+    // Navigate to a specific match by index, emitting signals
+    void navigateToMatch( int index );
+
+    // Find match index after/before a given position (with wrap-around)
+    int findMatchIndexAfter( LineNumber line, LineColumn col ) const;
+    int findMatchIndexBefore( LineNumber line, LineColumn col ) const;
+
     // Pointers to external objects
     const AbstractLogData& logData_;
 
@@ -221,6 +247,14 @@ class QuickFind : public QObject {
 
     // Incremental search status
     IncrementalSearchStatus incrementalSearchStatus_;
+
+    // All matches found by scan
+    std::vector<MatchInfo> allMatches_;
+    int currentMatchIndex_ = -1;
+
+    // Scan future for async full-file scan
+    QFuture<std::vector<MatchInfo>> scanFuture_;
+    QFutureWatcher<std::vector<MatchInfo>> scanWatcher_;
 
     // Private functions
     Portion doSearchForward( const Selection& selection, const QuickFindMatcher& matcher );

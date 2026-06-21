@@ -39,6 +39,7 @@
 #include "log.h"
 
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QToolButton>
 #include <qcheckbox.h>
@@ -60,9 +61,6 @@ const QString QFNotification::INTERRUPTED = "Search interrupted";
 QuickFindWidget::QuickFindWidget( QWidget* parent )
     : QWidget( parent )
 {
-    // ui_.setupUi( this );
-    // setFocusProxy(ui_.findEdit);
-    // setProperty("topBorder", true);
     auto* layout = new QHBoxLayout( this );
 
     layout->setContentsMargins( 6, 0, 6, 6 );
@@ -73,13 +71,16 @@ QuickFindWidget::QuickFindWidget( QWidget* parent )
     layout->addWidget( closeButton_ );
 
     editQuickFind_ = new QLineEdit( this );
-    // FIXME: set MinimumSize might be to constraining
     editQuickFind_->setMinimumSize( QSize( 150, 0 ) );
     layout->addWidget( editQuickFind_ );
 
     ignoreCaseCheck_ = new QCheckBox( "Ignore &case" );
-    ignoreCaseCheck_->setChecked( Configuration::get().qfIgnoreCase() );
+    ignoreCaseCheck_->setChecked( true );
     layout->addWidget( ignoreCaseCheck_ );
+
+    regexCheck_ = new QCheckBox( "&regex" );
+    regexCheck_->setChecked( true );
+    layout->addWidget( regexCheck_ );
 
     previousButton_
         = setupToolButton( QLatin1String( "Previous" ), QLatin1String( ":/images/arrowup.png" ) );
@@ -91,8 +92,12 @@ QuickFindWidget::QuickFindWidget( QWidget* parent )
     nextButton_->setShortcut( QKeySequence::FindNext );
     layout->addWidget( nextButton_ );
 
+    matchCountLabel_ = new QLabel( "" );
+    matchCountLabel_->setMinimumWidth( 50 );
+    matchCountLabel_->setAlignment( Qt::AlignCenter );
+    layout->addWidget( matchCountLabel_ );
+
     notificationText_ = new QLabel( "" );
-    // FIXME: set MinimumSize might be too constraining
     int width = QFNotification::maxWidth( notificationText_ );
     notificationText_->setMinimumSize( width, 0 );
     layout->addWidget( notificationText_ );
@@ -102,7 +107,6 @@ QuickFindWidget::QuickFindWidget( QWidget* parent )
     // Behaviour
     connect( closeButton_, &QToolButton::clicked, this, &QuickFindWidget::closeHandler );
     connect( editQuickFind_, &QLineEdit::textEdited, this, &QuickFindWidget::textChanged );
-    connect( editQuickFind_, &QLineEdit::returnPressed, this, &QuickFindWidget::returnHandler );
 
     connect( ignoreCaseCheck_, &QCheckBox::stateChanged, this, [ this ] {
         textChanged();
@@ -110,8 +114,13 @@ QuickFindWidget::QuickFindWidget( QWidget* parent )
         Configuration::get().save();
     } );
 
+    connect( regexCheck_, &QCheckBox::stateChanged, this, [ this ] { textChanged(); } );
+
     connect( previousButton_, &QToolButton::clicked, this, &QuickFindWidget::doSearchBackward );
     connect( nextButton_, &QToolButton::clicked, this, &QuickFindWidget::doSearchForward );
+
+    // Install event filter on the line edit to intercept Enter/Shift+Enter
+    editQuickFind_->installEventFilter( this );
 
     // Notification timer:
     notificationTimer_ = new QTimer( this );
@@ -127,14 +136,24 @@ void QuickFindWidget::userActivate()
     editQuickFind_->selectAll();
 }
 
+bool QuickFindWidget::isActive() const
+{
+    return isVisible();
+}
+
+void QuickFindWidget::closeWidget()
+{
+    closeHandler();
+}
+
 //
 // Q_SLOTS:
 //
 
-void QuickFindWidget::changeDisplayedPattern( const QString& newPattern, bool isRegex )
+void QuickFindWidget::changeDisplayedPattern( const QString& newPattern, bool regex )
 {
     auto pattern
-        = ( !isRegex && isRegexSearch() ) ? QRegularExpression::escape( newPattern ) : newPattern;
+        = ( !regex && isRegex() ) ? QRegularExpression::escape( newPattern ) : newPattern;
     editQuickFind_->setText( pattern );
     editQuickFind_->setCursorPosition( patternCursorPosition_ );
 }
@@ -155,39 +174,40 @@ void QuickFindWidget::clearNotification()
     notificationText_->setText( "" );
 }
 
-// User clicks forward arrow
+void QuickFindWidget::updateMatchCount( int current, int total )
+{
+    if ( total == 0 ) {
+        matchCountLabel_->setText( "" );
+    }
+    else {
+        matchCountLabel_->setText( QStringLiteral( "%1 / %2" ).arg( current ).arg( total ) );
+    }
+}
+
 void QuickFindWidget::doSearchForward()
 {
     LOG_DEBUG << "QuickFindWidget::doSearchForward()";
 
-    // The user has clicked on a button, so we assume she wants
-    // the widget to stay visible.
     userRequested_ = true;
 
-    Q_EMIT patternConfirmed( editQuickFind_->text(), isIgnoreCase(), isRegexSearch() );
+    Q_EMIT patternConfirmed( editQuickFind_->text(), isIgnoreCase(), isRegex() );
     Q_EMIT searchForward();
+
+    editQuickFind_->setFocus();
 }
 
-// User clicks backward arrow
 void QuickFindWidget::doSearchBackward()
 {
     LOG_DEBUG << "QuickFindWidget::doSearchBackward()";
 
-    // The user has clicked on a button, so we assume she wants
-    // the widget to stay visible.
     userRequested_ = true;
 
-    Q_EMIT patternConfirmed( editQuickFind_->text(), isIgnoreCase(), isRegexSearch() );
+    Q_EMIT patternConfirmed( editQuickFind_->text(), isIgnoreCase(), isRegex() );
     Q_EMIT searchBackward();
+
+    editQuickFind_->setFocus();
 }
 
-// Same as user clicks backward arrow
-void QuickFindWidget::returnHandler()
-{
-    doSearchForward();
-}
-
-// Close and reset flag when the user clicks 'close'
 void QuickFindWidget::closeHandler()
 {
     userRequested_ = false;
@@ -198,15 +218,30 @@ void QuickFindWidget::closeHandler()
 
 void QuickFindWidget::notificationTimeout()
 {
-    // We close the widget if the user hasn't explicitely requested it.
-    if ( !userRequested_ )
-        this->hide();
+    notificationText_->setText( "" );
 }
 
 void QuickFindWidget::textChanged()
 {
     patternCursorPosition_ = editQuickFind_->cursorPosition();
-    Q_EMIT patternUpdated( editQuickFind_->text(), isIgnoreCase(), isRegexSearch() );
+    Q_EMIT patternUpdated( editQuickFind_->text(), isIgnoreCase(), isRegex() );
+}
+
+bool QuickFindWidget::eventFilter( QObject* obj, QEvent* event )
+{
+    if ( obj == editQuickFind_ && event->type() == QEvent::KeyPress ) {
+        auto* keyEvent = static_cast<QKeyEvent*>( event );
+        if ( keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter ) {
+            if ( keyEvent->modifiers() & Qt::ShiftModifier ) {
+                doSearchBackward();
+            }
+            else {
+                doSearchForward();
+            }
+            return true;
+        }
+    }
+    return QWidget::eventFilter( obj, event );
 }
 
 //
@@ -235,7 +270,7 @@ bool QuickFindWidget::isIgnoreCase() const
     return ( ignoreCaseCheck_->checkState() == Qt::Checked );
 }
 
-bool QuickFindWidget::isRegexSearch() const
+bool QuickFindWidget::isRegex() const
 {
-    return ( Configuration::get().quickfindRegexpType() == SearchRegexpType::ExtendedRegexp );
+    return regexCheck_->isChecked();
 }

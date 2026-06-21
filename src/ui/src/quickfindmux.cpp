@@ -87,16 +87,23 @@ void QuickFindMux::searchForward()
 {
     LOG_DEBUG << "QuickFindMux::searchForward";
 
-    if ( auto searchable = getSearchableWidget() )
+    if ( auto searchable = getSearchableWidget() ) {
         searchable->searchForward();
+        // Directly query the count after navigation (belt-and-suspenders with signal chain)
+        Q_EMIT matchCountChanged( searchable->getLastMatchCurrent(),
+                                  searchable->getLastMatchTotal() );
+    }
 }
 
 void QuickFindMux::searchBackward()
 {
     LOG_DEBUG << "QuickFindMux::searchBackward";
 
-    if ( auto searchable = getSearchableWidget() )
+    if ( auto searchable = getSearchableWidget() ) {
         searchable->searchBackward();
+        Q_EMIT matchCountChanged( searchable->getLastMatchCurrent(),
+                                  searchable->getLastMatchTotal() );
+    }
 }
 
 void QuickFindMux::setNewPattern( const QString& newPattern, bool ignoreCase, bool isRegexSearch )
@@ -104,6 +111,9 @@ void QuickFindMux::setNewPattern( const QString& newPattern, bool ignoreCase, bo
     const auto& config = Configuration::get();
 
     LOG_DEBUG << "QuickFindMux::setNewPattern";
+
+    // Reset match count while scan is in progress
+    Q_EMIT matchCountChanged( 0, 0 );
 
     // If we must do an incremental search, we do it now
     if ( config.isQuickfindIncremental() ) {
@@ -117,10 +127,11 @@ void QuickFindMux::setNewPattern( const QString& newPattern, bool ignoreCase, bo
     }
 }
 
-void QuickFindMux::confirmPattern( const QString& newPattern, bool ignoreCase, bool isRegexSearch )
+void QuickFindMux::confirmPattern( const QString& /*newPattern*/, bool /*ignoreCase*/,
+                                   bool /*isRegexSearch*/ )
 {
-    pattern_->changeSearchPattern( newPattern, ignoreCase, isRegexSearch );
-
+    // Pattern was already set by setNewPattern during typing.
+    // Just stop the incremental search.
     if ( Configuration::get().isQuickfindIncremental() ) {
         if ( auto searchable = getSearchableWidget() )
             searchable->incrementalSearchStop();
@@ -147,6 +158,16 @@ void QuickFindMux::changeQuickFind( const QString& new_pattern, QFDirection new_
 void QuickFindMux::notifyPatternChanged()
 {
     Q_EMIT patternChanged( pattern_->getPattern() );
+}
+
+void QuickFindMux::forwardMatchCount( int currentIndex, int totalCount )
+{
+    if ( auto active = getSearchableWidget() ) {
+        auto* activeObj = dynamic_cast<QObject*>( active );
+        if ( activeObj && sender() == activeObj ) {
+            Q_EMIT matchCountChanged( currentIndex, totalCount );
+        }
+    }
 }
 
 //
@@ -182,6 +203,9 @@ void QuickFindMux::registerSearchable( QObject* searchable )
     // And clear them
     connect( searchable, SIGNAL( clearQuickFindNotification() ), this,
              SIGNAL( clearNotification() ) );
+    // Forward match count updates (only from the active searchable)
+    connect( searchable, SIGNAL( matchCountUpdated( int, int ) ), this,
+             SLOT( forwardMatchCount( int, int ) ) );
     // Search can be initiated by the view itself
     connect( searchable, SIGNAL( searchNext() ), this, SLOT( searchNext() ) );
     connect( searchable, SIGNAL( searchPrevious() ), this, SLOT( searchPrevious() ) );

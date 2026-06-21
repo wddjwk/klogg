@@ -128,6 +128,9 @@ QuickFind::QuickFind( const AbstractLogData& logData )
 
     connect( &operationWatcher_, &QFutureWatcher<Portion>::finished, this,
              &QuickFind::onSearchFutureReady );
+
+    connect( &scanWatcher_, &QFutureWatcher<std::vector<MatchInfo>>::finished, this,
+             &QuickFind::onScanFutureReady );
 }
 
 Selection QuickFind::incrementalSearchStop()
@@ -137,6 +140,11 @@ Selection QuickFind::incrementalSearchStop()
         incrementalSearchStatus_ = IncrementalSearchStatus();
         interruptRequested_.set();
 
+        // If scan already found matches and queued a searchDone,
+        // don't restore the old selection — the scan result will take over.
+        if ( !allMatches_.empty() && currentMatchIndex_ >= 0 ) {
+            return Selection{};
+        }
         return s;
     }
     else {
@@ -162,6 +170,7 @@ void QuickFind::stopSearch()
     LOG_INFO << "Stop search for quickfind " << this;
     interruptRequested_.set();
     operationWatcher_.waitForFinished();
+    scanWatcher_.waitForFinished();
 }
 
 void QuickFind::onSearchFutureReady()
@@ -177,6 +186,159 @@ void QuickFind::onSearchFutureReady()
     else {
         Q_EMIT searchDone( false, selection );
     }
+}
+
+void QuickFind::onScanFutureReady()
+{
+    allMatches_ = scanWatcher_.result();
+
+    LOG_DEBUG << "QuickFind::onScanFutureReady - found " << allMatches_.size() << " matches";
+
+    if ( allMatches_.empty() ) {
+        currentMatchIndex_ = -1;
+        Q_EMIT matchCountUpdated( 0, 0 );
+        Q_EMIT searchDone( false, Portion{} );
+        if ( incrementalSearchStatus_.direction() != None ) {
+            Q_EMIT searchDone( false,
+                               Portion{ incrementalSearchStatus_.position().line(), 0_lcol, 0_lcol } );
+        }
+        return;
+    }
+
+    // Find the first match from the initial search position
+    int startIdx = 0;
+    if ( incrementalSearchStatus_.isOngoing() ) {
+        auto startPos = incrementalSearchStatus_.position();
+        startIdx = findMatchIndexAfter( startPos.line(), startPos.column() );
+        if ( startIdx < 0 )
+            startIdx = 0; // wrap to beginning
+    }
+
+    currentMatchIndex_ = startIdx;
+    navigateToMatch( startIdx );
+}
+
+void QuickFind::scanAllMatches( const QuickFindMatcher& matcher )
+{
+    LOG_DEBUG << "QuickFind::scanAllMatches";
+
+    // Cancel any ongoing scan
+    scanWatcher_.cancel();
+    scanWatcher_.waitForFinished();
+
+    // Clear previous matches
+    allMatches_.clear();
+    currentMatchIndex_ = -1;
+
+    if ( !matcher.isActive() ) {
+        Q_EMIT matchCountUpdated( 0, 0 );
+        return;
+    }
+
+    const auto regexp = matcher.regexp();
+
+#if QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
+    scanFuture_ = QtConcurrent::run( [this, regexp]() {
+#else
+    scanFuture_ = QtConcurrent::run( [this, regexp]() -> std::vector<MatchInfo> {
+#endif
+        std::vector<MatchInfo> results;
+        const auto nb_lines = logData_.getNbLine();
+        for ( auto line = 0_lnum; line < nb_lines; ++line ) {
+            const QString lineText = logData_.getExpandedLineString( line );
+            auto it = regexp.globalMatch( lineText );
+            while ( it.hasNext() ) {
+                auto m = it.next();
+                results.push_back(
+                    { line, LineColumn{ m.capturedStart() }, LineColumn{ m.capturedEnd() - 1 } } );
+            }
+        }
+        return results;
+    } );
+
+    scanWatcher_.setFuture( scanFuture_ );
+}
+
+void QuickFind::navigateToMatch( int index )
+{
+    if ( index < 0 || index >= static_cast<int>( allMatches_.size() ) ) {
+        Q_EMIT searchDone( false, Portion{} );
+        Q_EMIT matchCountUpdated( 0, static_cast<int>( allMatches_.size() ) );
+        return;
+    }
+
+    const auto& m = allMatches_[index];
+    Q_EMIT clearNotification();
+    Q_EMIT searchDone( true, Portion{ m.line, m.startCol, m.endCol } );
+    Q_EMIT matchCountUpdated( index + 1, static_cast<int>( allMatches_.size() ) );
+}
+
+int QuickFind::findMatchIndexAfter( LineNumber line, LineColumn col ) const
+{
+    if ( allMatches_.empty() )
+        return -1;
+
+    // Binary search for the first match at or after (line, col)
+    int lo = 0;
+    int hi = static_cast<int>( allMatches_.size() ) - 1;
+    int result = -1;
+
+    while ( lo <= hi ) {
+        int mid = lo + ( hi - lo ) / 2;
+        const auto& m = allMatches_[mid];
+        if ( m.line > line || ( m.line == line && m.startCol >= col ) ) {
+            result = mid;
+            hi = mid - 1;
+        }
+        else {
+            lo = mid + 1;
+        }
+    }
+
+    // Wrap around to the first match if nothing found after current position
+    if ( result < 0 )
+        result = 0;
+
+    return result;
+}
+
+int QuickFind::findMatchIndexBefore( LineNumber line, LineColumn col ) const
+{
+    if ( allMatches_.empty() )
+        return -1;
+
+    // Binary search for the last match before (line, col)
+    int lo = 0;
+    int hi = static_cast<int>( allMatches_.size() ) - 1;
+    int result = -1;
+
+    while ( lo <= hi ) {
+        int mid = lo + ( hi - lo ) / 2;
+        const auto& m = allMatches_[mid];
+        if ( m.line < line || ( m.line == line && m.endCol < col ) ) {
+            result = mid;
+            lo = mid + 1;
+        }
+        else {
+            hi = mid - 1;
+        }
+    }
+
+    // Wrap around to the last match if nothing found before current position
+    if ( result < 0 )
+        result = static_cast<int>( allMatches_.size() ) - 1;
+
+    return result;
+}
+
+int QuickFind::currentMatchIndex() const
+{
+    return currentMatchIndex_ >= 0 ? currentMatchIndex_ + 1 : 0;
+}
+
+int QuickFind::totalMatches() const
+{
+    return static_cast<int>( allMatches_.size() );
 }
 
 void QuickFind::incrementallySearchForward( Selection selection, QuickFindMatcher matcher )
@@ -200,17 +362,8 @@ void QuickFind::incrementallySearchForward( Selection selection, QuickFindMatche
         incrementalSearchStatus_ = IncrementalSearchStatus( Forward, start_position, selection );
     }
 
-#if QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
-    operationFuture_ = QtConcurrent::run( this, &QuickFind::doSearchForward, start_position,
-                                          selection, matcher );
-#else
-    operationFuture_ = QtConcurrent::run(
-        qOverload<const FilePosition&, const Selection&, const QuickFindMatcher&>(
-            &QuickFind::doSearchForward ),
-        this, start_position, selection, matcher );
-#endif
-
-    operationWatcher_.setFuture( operationFuture_ );
+    // Trigger async scan of all matches
+    scanAllMatches( matcher );
 }
 
 void QuickFind::incrementallySearchBackward( Selection selection, QuickFindMatcher matcher )
@@ -234,21 +387,35 @@ void QuickFind::incrementallySearchBackward( Selection selection, QuickFindMatch
         incrementalSearchStatus_ = IncrementalSearchStatus( Backward, start_position, selection );
     }
 
-#if QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
-    operationFuture_ = QtConcurrent::run( this, &QuickFind::doSearchBackward, start_position,
-                                          selection, matcher );
-#else
-    operationFuture_ = QtConcurrent::run(
-        qOverload<const FilePosition&, const Selection&, const QuickFindMatcher&>(
-            &QuickFind::doSearchBackward ),
-        this, start_position, selection, matcher );
-#endif
-    operationWatcher_.setFuture( operationFuture_ );
+    // Trigger async scan of all matches
+    scanAllMatches( matcher );
 }
 
 void QuickFind::searchForward( Selection selection, QuickFindMatcher matcher )
 {
+    LOG_DEBUG << "QuickFind::searchForward";
+
     incrementalSearchStatus_ = IncrementalSearchStatus();
+
+    // Wait for any ongoing scan to complete so we use fresh results
+    scanWatcher_.waitForFinished();
+
+    if ( !allMatches_.empty() ) {
+        // Navigate to the next match after the current selection, with wrap-around
+        auto nextPos = selection.getNextPosition();
+        int idx = findMatchIndexAfter( nextPos.line(), nextPos.column() );
+        if ( idx >= 0 ) {
+            currentMatchIndex_ = idx;
+            navigateToMatch( idx );
+        }
+        else {
+            Q_EMIT searchDone( false, Portion{} );
+            sendNotification( QFNotificationReachedEndOfFile{} );
+        }
+        return;
+    }
+
+    // Fallback: no matches found, use old line-by-line search
     interruptRequested_.set();
     operationWatcher_.waitForFinished();
 
@@ -264,7 +431,29 @@ void QuickFind::searchForward( Selection selection, QuickFindMatcher matcher )
 
 void QuickFind::searchBackward( Selection selection, QuickFindMatcher matcher )
 {
+    LOG_DEBUG << "QuickFind::searchBackward";
+
     incrementalSearchStatus_ = IncrementalSearchStatus();
+
+    // Wait for any ongoing scan to complete so we use fresh results
+    scanWatcher_.waitForFinished();
+
+    if ( !allMatches_.empty() ) {
+        // Navigate to the previous match before the current selection, with wrap-around
+        auto prevPos = selection.getPreviousPosition();
+        int idx = findMatchIndexBefore( prevPos.line(), prevPos.column() );
+        if ( idx >= 0 ) {
+            currentMatchIndex_ = idx;
+            navigateToMatch( idx );
+        }
+        else {
+            Q_EMIT searchDone( false, Portion{} );
+            sendNotification( QFNotificationReachedBegininningOfFile{} );
+        }
+        return;
+    }
+
+    // Fallback: no matches found, use old line-by-line search
     interruptRequested_.set();
     operationWatcher_.waitForFinished();
 
@@ -455,6 +644,8 @@ void QuickFind::resetLimits()
 {
     lastMatch_.reset();
     firstMatch_.reset();
+    allMatches_.clear();
+    currentMatchIndex_ = -1;
 }
 
 void QuickFind::sendNotification( QFNotification notification )

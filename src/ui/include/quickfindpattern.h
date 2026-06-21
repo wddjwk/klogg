@@ -66,6 +66,11 @@ class QuickFindMatcher {
         return isActive_;
     }
 
+    const QRegularExpression& regexp() const
+    {
+        return regexp_;
+    }
+
     // Returns whether there is a match in the passed line, starting at
     // the passed column.
     // Results are stored internally.

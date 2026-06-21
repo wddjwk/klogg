@@ -101,20 +101,14 @@ std::pair<LineColumn, LineColumn> QuickFindMatcher::getLastMatch() const
 
 void QuickFindPattern::changeSearchPattern( const QString& pattern, bool isRegex )
 {
-    // Determine the type of regexp depending on the config
-    const auto searchType = Configuration::get().quickfindRegexpType();
-    switch ( searchType ) {
-    case SearchRegexpType::ExtendedRegexp:
-        pattern_ = isRegex ? pattern : QRegularExpression::escape( pattern );
-        break;
-    default:
+    if ( isRegex ) {
         pattern_ = pattern;
-        break;
+        regexp_.setPattern( pattern_ );
     }
-
-    regexp_.setPattern( searchType == SearchRegexpType::ExtendedRegexp
-                            ? pattern_
-                            : QRegularExpression::escape( pattern_ ) );
+    else {
+        pattern_ = pattern;
+        regexp_.setPattern( QRegularExpression::escape( pattern_ ) );
+    }
 
     if ( regexp_.isValid() && ( !pattern_.isEmpty() ) )
         active_ = true;

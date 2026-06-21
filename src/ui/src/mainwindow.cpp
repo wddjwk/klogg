@@ -218,6 +218,8 @@ MainWindow::MainWindow( WindowSession session )
              SLOT( notify( const QFNotification& ) ) );
     connect( &quickFindMux_, SIGNAL( clearNotification() ), &quickFindWidget_,
              SLOT( clearNotification() ) );
+    connect( &quickFindMux_, SIGNAL( matchCountChanged( int, int ) ), &quickFindWidget_,
+             SLOT( updateMatchCount( int, int ) ) );
 
     // Construct the QuickFind bar
     quickFindWidget_.hide();
@@ -2220,6 +2222,12 @@ void MainWindow::readSettings()
 void MainWindow::displayQuickFindBar( QuickFindMux::QFDirection direction )
 {
     LOG_DEBUG << "MainWindow::displayQuickFindBar";
+
+    // Toggle: if already visible, close the widget
+    if ( quickFindWidget_.isActive() ) {
+        quickFindWidget_.closeWidget();
+        return;
+    }
 
     // Warn crawlers so they can save the position of the focus in order
     // to do incremental search in the right view.

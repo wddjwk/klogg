@@ -219,6 +219,8 @@ class AbstractLogView : public QAbstractScrollArea, public SearchableWidgetInter
     void notifyQuickFind( const QFNotification& message );
     // Sent up when quickFind wants to clear the notification.
     void clearQuickFindNotification();
+    // Sent up when quickfind match count changes (currentIndex 1-based, 0 means no match)
+    void matchCountUpdated( int currentIndex, int totalCount );
     // Sent when the view ask for a line to be marked
     // (click in the left margin).
     void markLines( const klogg::vector<LineNumber>& lines );
@@ -275,6 +277,10 @@ class AbstractLogView : public QAbstractScrollArea, public SearchableWidgetInter
     // Abort the current incremental search (typically when user press esc)
     void incrementalSearchAbort() override;
 
+    // Query the latest match count (for direct query by mux)
+    int getLastMatchCurrent() const override;
+    int getLastMatchTotal() const override;
+
     // Signals the follow mode has been enabled.
     void followSet( bool checked );
 
@@ -314,6 +320,7 @@ class AbstractLogView : public QAbstractScrollArea, public SearchableWidgetInter
     void setSelectionStart();
     void setSelectionEnd();
     void setQuickFindResult( bool hasMatch, const Portion& selection );
+    void cacheMatchCount( int current, int total );
     void setColorLabel( QAction* action );
 
   private:
@@ -425,6 +432,10 @@ class AbstractLogView : public QAbstractScrollArea, public SearchableWidgetInter
     const QuickFindPattern* const quickFindPattern_;
     // Our own QuickFind object
     QuickFind* quickFind_;
+
+    // Cached match count for direct query
+    int lastMatchCurrent_ = 0;
+    int lastMatchTotal_ = 0;
 
 #ifdef GLOGG_PERF_MEASURE_FPS
     // Performance measurement

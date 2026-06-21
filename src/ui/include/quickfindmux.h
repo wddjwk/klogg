@@ -40,6 +40,9 @@ class SearchableWidgetInterface {
     virtual void incrementallySearchBackward() = 0;
     virtual void incrementalSearchStop() = 0;
     virtual void incrementalSearchAbort() = 0;
+
+    virtual int getLastMatchCurrent() const = 0;
+    virtual int getLastMatchTotal() const = 0;
 };
 
 // Interface representing the selector. It will be called and asked
@@ -99,6 +102,7 @@ class QuickFindMux : public QObject
     void patternChanged( const QString& );
     void notify( const QFNotification& );
     void clearNotification();
+    void matchCountChanged( int currentIndex, int totalCount );
 
   public Q_SLOTS:
     // Signal the current pattern must be altered (will start an incremental
@@ -126,6 +130,7 @@ class QuickFindMux : public QObject
     void changeQuickFind( const QString& newPattern,
             QuickFindMux::QFDirection newDirection );
     void notifyPatternChanged();
+    void forwardMatchCount( int currentIndex, int totalCount );
 
   private:
     const QuickFindMuxSelectorInterface* selector_;
