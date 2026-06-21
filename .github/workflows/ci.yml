@@ -1,0 +1,192 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+    paths-ignore:
+      - 'website/**'
+      - BUILD.md
+      - CODE_OF_CONDUCT.md
+      - CONTRIBUTING.md
+      - README.md
+      - latest.json
+      - .gitignore
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  SaveVersion:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/klogg-version
+
+      - name: Save version
+        run: echo $KLOGG_VERSION > klogg_version.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: klogg_version
+          path: 'klogg_version.txt'
+          if-no-files-found: error
+
+  Linux:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - os: oraclelinux
+            os_version: 8
+            arch: x64
+            check_command: yum install -y --setopt tsflags=test /usr/local/klogg*.rpm
+            cpack_gen: RPM
+            artifacts_id: oracle
+            package_suffix: rpm
+            check_container: oraclelinux:8
+            container_root: docker/oracle8
+            container: klogg_oracle8
+            cmake_opts: -DCMAKE_BUILD_WITH_INSTALL_RPATH=on -DKLOGG_USE_VECTORSCAN=OFF -DKLOGG_USE_HYPERSCAN=ON
+
+          - os: ubuntu_jammy
+            os_version: 22.04
+            arch: x64
+            check_command: apt-get update && apt install --dry-run /usr/local/klogg*.deb
+            cpack_gen: DEB
+            artifacts_id: jammy
+            package_suffix: deb
+            check_container: ubuntu:22.04
+            container_root: docker/ubuntu22.04
+            container: klogg_ubuntu22.04
+            cmake_opts:
+
+          - os: ubuntu_appimage
+            os_version: 20.04
+            arch: x64
+            artifacts_id: appimage
+            package_suffix: AppImage
+            container_root: docker/ubuntu20.04
+            container: klogg_ubuntu20.04
+            cmake_opts:
+
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build container
+        run: |
+          cd ${{ matrix.config.container_root }}
+          docker build -t ${{ matrix.config.container }} .
+
+      - uses: ./.github/actions/klogg-version
+      - uses: ./.github/actions/prepare-workspace-env
+      - uses: ./.github/actions/docker-build
+      - uses: ./.github/actions/docker-run-tests
+      - uses: ./.github/actions/docker-package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.config.artifacts_id }}
+          path: '${{ env.KLOGG_BUILD_ROOT }}/packages/*'
+          if-no-files-found: error
+
+  Windows:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - os: windows
+            os_version: 2022
+            qt_version: 6.7.3
+            qt_modules: qt5compat
+            qt_arch: win64_msvc2019_64
+            arch: x64
+            ssl_arch: -x64
+            cmake_opts:
+            artifacts_id: windows-x64-qt6
+
+    runs-on: ${{ matrix.config.os }}-${{ matrix.config.os_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache openssl
+        id: cache-openssl
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\openssl-1.1
+          key: OpensslCache-1-1-1w
+
+      - name: Download openssl
+        if: ${{ steps.cache-openssl.outputs.cache-hit != 'true' }}
+        run: |
+          Invoke-WebRequest -Uri "https://www.firedaemon.com/download-firedaemon-openssl-1.1.1-zip" -OutFile openssl.zip
+          7z x openssl.zip
+
+      - name: Set openssl paths
+        shell: sh
+        run: |
+          echo "SSL_DIR=${{ github.workspace }}\openssl-1.1\${{ matrix.config.arch }}\bin" >> $GITHUB_ENV
+          echo "SSL_ARCH=${{ matrix.config.ssl_arch }}" >> $GITHUB_ENV
+
+      - uses: ./.github/actions/agent-setup
+      - uses: ./.github/actions/klogg-version
+      - uses: ./.github/actions/prepare-workspace-env
+
+      - name: Prepare dev cmd
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.config.arch }}
+
+      - uses: ./.github/actions/agent-build
+      - uses: ./.github/actions/agent-run-tests
+      - uses: ./.github/actions/agent-package-win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.config.artifacts_id }}
+          path: '${{ env.KLOGG_BUILD_ROOT }}/packages/*'
+          if-no-files-found: error
+
+  Release:
+    needs: [SaveVersion, Linux, Windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+
+      - name: Read version
+        run: echo "KLOGG_VERSION=$(cat klogg_version/klogg_version.txt)" >> $GITHUB_ENV
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find packages-* -type f -exec cp {} release-files/ \;
+          cd release-files && sha256sum --binary * > klogg-${KLOGG_VERSION}-sha256.txt
+
+      - name: Display release files
+        run: ls -lh release-files/
+
+      - name: Publish continuous release
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: continuous
+          name: "Continuous build ${{ env.KLOGG_VERSION }}"
+          prerelease: true
+          files: release-files/*
+
+      - name: Publish tag release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release-files/*

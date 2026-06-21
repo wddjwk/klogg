@@ -1,9 +1,18 @@
 name: "Prepare klogg version env var"
-description: ""
+description: "Dual-mode versioning: from git tag or CMakeLists.txt + run number"
 runs:
   using: "composite"
   steps:
-    - name: Set klogg version
+    - name: Set version from tag
+      if: startsWith(github.ref, 'refs/tags/v')
       shell: sh
       run: |
-        echo "KLOGG_VERSION=24.11.0.$((${{ github.run_number }} + 717))" >> $GITHUB_ENV 
+        TAG=${GITHUB_REF#refs/tags/v}
+        echo "KLOGG_VERSION=${TAG}" >> $GITHUB_ENV
+
+    - name: Set version for continuous
+      if: "!startsWith(github.ref, 'refs/tags/v')"
+      shell: sh
+      run: |
+        BASE=$(grep -oP 'VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+        echo "KLOGG_VERSION=${BASE}.$((${{ github.run_number }} + 717))" >> $GITHUB_ENV
