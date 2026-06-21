@@ -196,6 +196,17 @@ class AbstractLogView : public QAbstractScrollArea, public SearchableWidgetInter
     virtual void doRegisterShortcuts();
     void registerShortcut( const std::string& action, std::function<void()> func );
 
+    // Allow subclasses to swap the data pointer (e.g. for collapse decoration)
+    void setLogData( const AbstractLogData* data );
+
+    // Override in subclasses to indicate a collapsed group placeholder line
+    virtual bool isCollapsedPlaceholderLine( LineNumber visualLine ) const;
+    virtual int64_t collapsedGroupSize( LineNumber visualLine ) const;
+
+    // Called when user clicks/double-clicks on a placeholder line
+    virtual void onPlaceholderClicked( LineNumber visualLine );
+    virtual void onPlaceholderDoubleClicked( LineNumber visualLine );
+
   Q_SIGNALS:
     // Sent up to the MainWindow to enable/disable the follow mode
     void followModeChanged( bool enabled );

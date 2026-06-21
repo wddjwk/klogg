@@ -41,11 +41,11 @@
 
 #include "abstractlogview.h"
 
+#include "collapsedfiltereddata.h"
+#include "collapsegrouper.h"
+#include "collapserules.h"
 #include "logfiltereddata.h"
 
-#include <QKeyEvent>
-
-// Class implementing the filtered (bottom) view widget.
 class FilteredView : public AbstractLogView
 {
   Q_OBJECT
@@ -54,23 +54,41 @@ class FilteredView : public AbstractLogView
             const QuickFindPattern* const quickFindPattern,
             QWidget* parent = nullptr );
 
-    // What is visible in the view.
     using Visibility = LogFilteredData::Visibility;
     void setVisibility( Visibility visi );
     Visibility visibility() const;
 
+    void setCollapseEnabled( bool enabled );
+    bool isCollapseEnabled() const;
+    void setCollapseRules( const QList<CollapseRule>& rules );
+    void recomputeCollapseGroups();
+
+  Q_SIGNALS:
+    void collapseGroupToggled();
+
   protected:
     LogFilteredData::LineType lineType( LineNumber lineNumber ) const override;
 
-    // Number of the filtered line relative to the unfiltered source
     LineNumber displayLineNumber(LineNumber lineNumber ) const override;
     LineNumber lineIndex( LineNumber lineNumber ) const override;
     LineNumber maxDisplayLineNumber() const override;
 
+    bool isCollapsedPlaceholderLine( LineNumber visualLine ) const override;
+    int64_t collapsedGroupSize( LineNumber visualLine ) const override;
+    void onPlaceholderClicked( LineNumber visualLine ) override;
+    void onPlaceholderDoubleClicked( LineNumber visualLine ) override;
+
     void doRegisterShortcuts() override;
 
   private:
+    void applyCollapse();
+
     LogFilteredData* logFilteredData_;
+
+    bool collapseEnabled_ = false;
+    QList<CollapseRule> collapseRules_;
+    CollapseGrouper collapseGrouper_;
+    CollapsedFilteredData collapsedData_;
 };
 
 #endif

@@ -36,10 +36,6 @@
  * along with klogg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// This file implements the FilteredView concrete class.
-// Most of the actual drawing and event management is done in AbstractLogView
-// Only behaviour specific to the filtered (bottom) view is implemented here.
-
 #include <cassert>
 
 #include "filteredview.h"
@@ -48,9 +44,11 @@
 FilteredView::FilteredView( LogFilteredData* newLogData,
                             const QuickFindPattern* const quickFindPattern, QWidget* parent )
     : AbstractLogView( newLogData, quickFindPattern, parent )
+    , logFilteredData_( newLogData )
+    , collapsedData_( newLogData )
 {
-    // We keep a copy of the filtered data for fast lookup of the line type
-    logFilteredData_ = newLogData;
+    connect( &collapseGrouper_, &CollapseGrouper::groupsComputed, this,
+             &FilteredView::applyCollapse, Qt::QueuedConnection );
 }
 
 void FilteredView::setVisibility( Visibility visi )
@@ -69,27 +67,123 @@ FilteredView::Visibility FilteredView::visibility() const
     return logFilteredData_->visibility();
 }
 
-// For the filtered view, a line is always matching!
+void FilteredView::setCollapseEnabled( bool enabled )
+{
+    collapseEnabled_ = enabled;
+
+    if ( enabled ) {
+        recomputeCollapseGroups();
+    }
+    else {
+        setLogData( logFilteredData_ );
+        collapsedData_.setGrouper( nullptr );
+        collapseGrouper_.clear();
+        updateData();
+    }
+}
+
+bool FilteredView::isCollapseEnabled() const
+{
+    return collapseEnabled_;
+}
+
+void FilteredView::setCollapseRules( const QList<CollapseRule>& rules )
+{
+    collapseRules_ = rules;
+
+    if ( collapseEnabled_ ) {
+        recomputeCollapseGroups();
+    }
+}
+
+void FilteredView::recomputeCollapseGroups()
+{
+    if ( !collapseEnabled_ || collapseRules_.isEmpty() ) {
+        return;
+    }
+
+    collapseGrouper_.computeGroups( logFilteredData_, collapseRules_ );
+}
+
+void FilteredView::applyCollapse()
+{
+    if ( !collapseEnabled_ ) {
+        return;
+    }
+
+    collapsedData_.setGrouper( &collapseGrouper_ );
+    setLogData( &collapsedData_ );
+    jumpToLine( 0_lnum );
+    updateData();
+
+    Q_EMIT collapseGroupToggled();
+}
+
 AbstractLogData::LineType FilteredView::lineType( LineNumber lineNumber ) const
 {
-    // line in filteredview corresponds to index
+    if ( collapseEnabled_ && !collapseGrouper_.isEmpty() ) {
+        const auto filteredIdx = collapsedData_.visualToFilteredIndex( lineNumber );
+        return logFilteredData_->lineTypeByIndex( filteredIdx );
+    }
     return logFilteredData_->lineTypeByIndex( lineNumber );
 }
 
 LineNumber FilteredView::displayLineNumber( LineNumber lineNumber ) const
 {
-    // Display a 1-based index
+    if ( collapseEnabled_ && !collapseGrouper_.isEmpty() ) {
+        const auto filteredIdx = collapsedData_.visualToFilteredIndex( lineNumber );
+        return logFilteredData_->getMatchingLineNumber( filteredIdx ) + 1_lcount;
+    }
     return logFilteredData_->getMatchingLineNumber( lineNumber ) + 1_lcount;
 }
 
 LineNumber FilteredView::lineIndex( LineNumber lineNumber ) const
 {
+    if ( collapseEnabled_ && !collapseGrouper_.isEmpty() ) {
+        const auto filteredIdx = logFilteredData_->getLineIndexNumber( lineNumber );
+        return collapsedData_.filteredIndexToVisual( filteredIdx );
+    }
     return logFilteredData_->getLineIndexNumber( lineNumber );
 }
 
 LineNumber FilteredView::maxDisplayLineNumber() const
 {
     return LineNumber( logFilteredData_->getNbTotalLines().get() );
+}
+
+bool FilteredView::isCollapsedPlaceholderLine( LineNumber visualLine ) const
+{
+    if ( !collapseEnabled_ ) {
+        return false;
+    }
+    return collapsedData_.isCollapsedGroupLine( visualLine );
+}
+
+int64_t FilteredView::collapsedGroupSize( LineNumber visualLine ) const
+{
+    if ( !collapseEnabled_ ) {
+        return 0;
+    }
+    return collapsedData_.collapsedGroupCount( visualLine );
+}
+
+void FilteredView::onPlaceholderClicked( LineNumber visualLine )
+{
+    if ( !collapseEnabled_ || collapseGrouper_.isEmpty() ) {
+        return;
+    }
+
+    const auto filteredIdx = collapsedData_.visualToFilteredIndex( visualLine );
+    collapseGrouper_.toggleGroupAtFilteredIndex( filteredIdx.get<int64_t>() );
+
+    collapsedData_.setGrouper( &collapseGrouper_ );
+    updateData();
+
+    Q_EMIT collapseGroupToggled();
+}
+
+void FilteredView::onPlaceholderDoubleClicked( LineNumber /*visualLine*/ )
+{
 }
 
 void FilteredView::doRegisterShortcuts()

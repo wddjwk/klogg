@@ -218,6 +218,9 @@ class CrawlerWidget : public QSplitter,
     // Called when the checkbox for search auto-refresh is changed
     void searchRefreshChangedHandler( bool isRefreshing );
 
+    // Called when the collapse button is toggled
+    void collapseToggleHandler( bool enabled );
+
     // Called when the checkbox for case sensitivity is changed
     void matchCaseChangedHandler( bool shouldMatchCase );
 
@@ -387,6 +390,7 @@ class CrawlerWidget : public QSplitter,
     QToolButton* clearButton_;
     QToolButton* searchButton_;
     QToolButton* keepSearchResultsButton_;
+    QToolButton* collapseButton_;
     QToolButton* stopButton_;
 
     QToolButton* matchCaseButton_;

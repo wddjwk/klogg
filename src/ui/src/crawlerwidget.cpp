@@ -43,6 +43,8 @@
 
 #include "abstractlogview.h"
 #include "active_screen.h"
+#include "collapserules.h"
+#include "collapserulesdialog.h"
 #include "linetypes.h"
 #include "log.h"
 
@@ -494,6 +496,10 @@ void CrawlerWidget::updateFilteredView( LinesCount nbMatches, int progress,
         stopButton_->hide();
         searchButton_->show();
         clearButton_->show();
+
+        if ( filteredView_->isCollapseEnabled() ) {
+            filteredView_->recomputeCollapseGroups();
+        }
     }
     else {
         // Search in progress
@@ -801,6 +807,15 @@ void CrawlerWidget::searchRefreshChangedHandler( bool isRefreshing )
 {
     searchState_.setAutorefresh( isRefreshing );
     printSearchInfoMessage( logFilteredData_->getNbMatches() );
+}
+
+void CrawlerWidget::collapseToggleHandler( bool enabled )
+{
+    if ( enabled ) {
+        auto rules = CollapseRulesCollection::getSynced().getSyncedRules();
+        filteredView_->setCollapseRules( rules );
+    }
+    filteredView_->setCollapseEnabled( enabled );
 }
 
 void CrawlerWidget::matchCaseChangedHandler( bool shouldMatchCase )
@@ -1116,6 +1131,13 @@ void CrawlerWidget::setup()
     keepSearchResultsButton_->setCheckable( true );
     keepSearchResultsButton_->setContentsMargins( 2, 2, 2, 2 );
 
+    collapseButton_ = new QToolButton();
+    collapseButton_->setText( tr( "Collapse" ) );
+    collapseButton_->setToolTip(
+        tr( "Collapse consecutive similar lines in filtered view" ) );
+    collapseButton_->setCheckable( true );
+    collapseButton_->setContentsMargins( 2, 2, 2, 2 );
+
     stopButton_ = new QToolButton();
     stopButton_->setAutoRaise( true );
     stopButton_->setEnabled( false );
@@ -1137,6 +1159,7 @@ void CrawlerWidget::setup()
     searchLineLayout->addWidget( searchLineEdit_ );
     searchLineLayout->addWidget( clearButton_ );
     searchLineLayout->addWidget( searchButton_ );
+    searchLineLayout->addWidget( collapseButton_ );
     searchLineLayout->addWidget( keepSearchResultsButton_ );
     searchLineLayout->addWidget( stopButton_ );
     searchLineLayout->addWidget( searchInfoLine_ );
@@ -1197,6 +1220,29 @@ void CrawlerWidget::setup()
     connect( editSearchHistoryAction, &QAction::triggered, this,
              &CrawlerWidget::editSearchHistory );
     connect( searchButton_, &QToolButton::clicked, this, &CrawlerWidget::startNewSearch );
+    connect( collapseButton_, &QToolButton::toggled, this,
+             &CrawlerWidget::collapseToggleHandler );
+
+    collapseButton_->setContextMenuPolicy( Qt::CustomContextMenu );
+    connect( collapseButton_, &QWidget::customContextMenuRequested, this,
+             [ this ]( const QPoint& ) {
+                 QMenu menu;
+                 auto* configAction = menu.addAction( tr( "Configure collapse rules..." ) );
+                 QAction* chosen = menu.exec( QCursor::pos() );
+                 if ( chosen == configAction ) {
+                     CollapseRulesDialog dialog( this );
+                     connect( &dialog, &CollapseRulesDialog::optionsChanged, this,
+                              [ this ]() {
+                                  if ( filteredView_->isCollapseEnabled() ) {
+                                      auto rules
+                                          = CollapseRulesCollection::getSynced().getSyncedRules();
+                                      filteredView_->setCollapseRules( rules );
+                                  }
+                              } );
+                     dialog.exec();
+                 }
+             } );
+
     connect( stopButton_, &QToolButton::clicked, this, &CrawlerWidget::stopSearch );
     connect( clearButton_, &QToolButton::clicked, searchLineEdit_, &QComboBox::clearEditText );
 

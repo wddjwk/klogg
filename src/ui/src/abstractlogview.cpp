@@ -451,6 +451,29 @@ AbstractLogView::~AbstractLogView()
     }
 }
 
+void AbstractLogView::setLogData( const AbstractLogData* newData )
+{
+    logData_ = newData;
+}
+
+bool AbstractLogView::isCollapsedPlaceholderLine( LineNumber /*visualLine*/ ) const
+{
+    return false;
+}
+
+int64_t AbstractLogView::collapsedGroupSize( LineNumber /*visualLine*/ ) const
+{
+    return 0;
+}
+
+void AbstractLogView::onPlaceholderClicked( LineNumber /*visualLine*/ )
+{
+}
+
+void AbstractLogView::onPlaceholderDoubleClicked( LineNumber /*visualLine*/ )
+{
+}
+
 //
 // Received events
 //
@@ -470,6 +493,12 @@ void AbstractLogView::changeEvent( QEvent* changeEvent )
 void AbstractLogView::mousePressEvent( QMouseEvent* mouseEvent )
 {
     auto line = convertCoordToLine( mouseEvent->pos().y() );
+
+    if ( mouseEvent->button() == Qt::LeftButton && line.has_value()
+         && isCollapsedPlaceholderLine( *line ) ) {
+        onPlaceholderClicked( *line );
+        return;
+    }
 
     if ( mouseEvent->button() == Qt::LeftButton ) {
         // Invalidate our cache
@@ -714,6 +743,12 @@ void AbstractLogView::mouseDoubleClickEvent( QMouseEvent* mouseEvent )
     if ( mouseEvent->button() == Qt::LeftButton ) {
         // Invalidate our cache
         textAreaCache_.invalid_ = true;
+
+        auto line = convertCoordToLine( mouseEvent->pos().y() );
+        if ( line.has_value() && isCollapsedPlaceholderLine( *line ) ) {
+            onPlaceholderDoubleClicked( *line );
+            return;
+        }
 
         const auto pos = convertCoordToFilePos( mouseEvent->pos() );
         selectWordAtPosition( pos );
@@ -2353,6 +2388,43 @@ void AbstractLogView::drawTextArea( QPaintDevice* paintDevice )
         QString logLine = logLines[ currentLine.get() ];
 
         const int xPos = contentStartPosX + ContentMarginWidth;
+
+        if ( isCollapsedPlaceholderLine( lineNumber ) ) {
+            const auto placeholderBg = QColor( 245, 245, 245 );
+            const auto placeholderFg = QColor( 128, 128, 128 );
+
+            painter->fillRect( xPos - ContentMarginWidth, yPos, viewport()->width(), fontHeight,
+                               placeholderBg );
+
+            painter->setPen( placeholderFg );
+            painter->drawText( xPos + ContentMarginWidth, yPos + fontAscent, logLine );
+
+            const int middleXLine = BulletAreaWidth / 2;
+            const int middleYLine = yPos + ( fontHeight / 2 );
+            const int triSize = 4;
+            const QPointF triPoints[ 3 ] = {
+                QPointF( middleXLine - triSize, middleYLine - triSize ),
+                QPointF( middleXLine + triSize, middleYLine - triSize ),
+                QPointF( middleXLine, middleYLine + triSize ),
+            };
+            painter->setBrush( QColor( 180, 180, 180 ) );
+            painter->setRenderHint( QPainter::Antialiasing );
+            painter->drawPolygon( triPoints, 3 );
+
+            if ( lineNumbersVisible_ ) {
+                painter->fillRect( 0, yPos, lineNumberAreaStartX + LineNumberPadding,
+                                   fontHeight, placeholderBg );
+            }
+
+            wrappedLinesInfo_.emplace_back(
+                WrappedLineData{ lineNumber, 0, WrappedString{ logLine, LineLength{ klogg::isize( logLine ) + 1 } } } );
+
+            yPos += fontHeight;
+            if ( yPos > viewport()->height() ) {
+                break;
+            }
+            continue;
+        }
 
         HighlightedMatchRanges highlighterMatches;
 
