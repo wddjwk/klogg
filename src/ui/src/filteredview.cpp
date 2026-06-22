@@ -105,6 +105,22 @@ void FilteredView::recomputeCollapseGroups()
     collapseGrouper_.computeGroups( logFilteredData_, collapseRules_ );
 }
 
+LineNumber FilteredView::visualToFilteredIndex( LineNumber visualLine ) const
+{
+    if ( collapseEnabled_ && !collapseGrouper_.isEmpty() ) {
+        return collapsedData_.visualToFilteredIndex( visualLine );
+    }
+    return visualLine;
+}
+
+LineNumber FilteredView::filteredIndexToVisual( LineNumber filteredIndex ) const
+{
+    if ( collapseEnabled_ && !collapseGrouper_.isEmpty() ) {
+        return collapsedData_.filteredIndexToVisual( filteredIndex );
+    }
+    return filteredIndex;
+}
+
 void FilteredView::applyCollapse()
 {
     if ( !collapseEnabled_ ) {

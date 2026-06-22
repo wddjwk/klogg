@@ -63,6 +63,9 @@ class FilteredView : public AbstractLogView
     void setCollapseRules( const QList<CollapseRule>& rules );
     void recomputeCollapseGroups();
 
+    LineNumber visualToFilteredIndex( LineNumber visualLine ) const;
+    LineNumber filteredIndexToVisual( LineNumber filteredIndex ) const;
+
   Q_SIGNALS:
     void collapseGroupToggled();
 

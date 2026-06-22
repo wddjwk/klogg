@@ -307,7 +307,8 @@ void CrawlerWidget::goToLine()
 
         const auto selectedLine
             = LineNumber( static_cast<LineNumber::UnderlyingType>( newLine - 1 ) );
-        filteredView_->trySelectLine( logFilteredData_->getLineIndexNumber( selectedLine ) );
+        const auto filteredIndex = logFilteredData_->getLineIndexNumber( selectedLine );
+        filteredView_->trySelectLine( filteredView_->filteredIndexToVisual( filteredIndex ) );
         logMainView_->trySelectLine( selectedLine );
     }
 }
@@ -545,7 +546,8 @@ void CrawlerWidget::updateFilteredView( LinesCount nbMatches, int progress,
         LOG_DEBUG << "updateFilteredView: restoring selection: "
                   << " absolute line number (0based) " << currentLineNumber_ << " index "
                   << currenLineIndex;
-        filteredView_->selectAndDisplayLine( currenLineIndex );
+        filteredView_->selectAndDisplayLine(
+            filteredView_->filteredIndexToVisual( currenLineIndex ) );
         filteredView_->setSearchLimits( searchStartLine_, searchEndLine_ );
     }
 }
@@ -851,7 +853,7 @@ void CrawlerWidget::changeFilteredViewVisibility( int index )
 
     if ( logFilteredData_->getNbLine() > 0_lcount ) {
         const auto lineIndex = logFilteredData_->getLineIndexNumber( currentLineNumber_ );
-        filteredView_->selectAndDisplayLine( lineIndex );
+        filteredView_->selectAndDisplayLine( filteredView_->filteredIndexToVisual( lineIndex ) );
     }
 }
 
@@ -1412,9 +1414,22 @@ void CrawlerWidget::connectAllFilteredViewSlots( FilteredView* view )
 {
     connect( view, &FilteredView::newSelection, view, [ view ]( auto ) { view->update(); } );
 
-    connect( view, &FilteredView::newSelection, this, &CrawlerWidget::jumpToMatchingLine );
+    connect( view, &FilteredView::newSelection, this,
+             [ this, view ]( LineNumber line, LinesCount nLines, LineColumn startCol,
+                             LineLength nSymbols ) {
+                 const auto filteredLine = view->visualToFilteredIndex( line );
+                 jumpToMatchingLine( filteredLine, nLines, startCol, nSymbols );
+             } );
 
-    connect( view, &FilteredView::markLines, this, &CrawlerWidget::markLinesFromFiltered );
+    connect( view, &FilteredView::markLines, this,
+             [ this, view ]( const klogg::vector<LineNumber>& lines ) {
+                 klogg::vector<LineNumber> convertedLines;
+                 convertedLines.reserve( lines.size() );
+                 for ( const auto& l : lines ) {
+                     convertedLines.push_back( view->visualToFilteredIndex( l ) );
+                 }
+                 markLinesFromFiltered( convertedLines );
+             } );
 
     connect( view, &FilteredView::highlightersChange, this, &CrawlerWidget::applyConfiguration );
 
@@ -1428,7 +1443,10 @@ void CrawlerWidget::connectAllFilteredViewSlots( FilteredView* view )
              &CrawlerWidget::replaceSearch );
 
     connect( view, &FilteredView::mouseHoveredOverLine, this,
-             &CrawlerWidget::mouseHoveredOverMatch );
+             [ this, view ]( LineNumber line ) {
+                 const auto filteredLine = view->visualToFilteredIndex( line );
+                 mouseHoveredOverMatch( filteredLine );
+             } );
 
     connect( view, &FilteredView::mouseLeftHoveringZone, overviewWidget_,
              &OverviewWidget::removeHighlight );
