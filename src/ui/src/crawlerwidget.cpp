@@ -56,6 +56,8 @@
 #include <QApplication>
 #include <QCompleter>
 #include <QInputDialog>
+#include <QMenu>
+#include <QTabBar>
 #include <QJsonDocument>
 #include <QKeySequence>
 #include <QLineEdit>
@@ -399,8 +401,12 @@ void CrawlerWidget::startNewSearch()
         applyConfiguration();
     }
 
-    tabbedFilteredView_->setTabText( tabbedFilteredView_->currentIndex(),
-                                     "Find \"" + searchLineEdit_->currentText() + "\"" );
+    const auto searchText = searchLineEdit_->currentText();
+    auto tabTitle = QStringLiteral( "Find \"%1\"" ).arg( searchText );
+    if ( tabTitle.length() > 30 ) {
+        tabTitle = tabTitle.left( 27 ) + QStringLiteral( "..." );
+    }
+    tabbedFilteredView_->setTabText( tabbedFilteredView_->currentIndex(), tabTitle );
 
     // Record the search line in the recent list
     // (reload the list first in case another glogg changed it)
@@ -1292,6 +1298,27 @@ void CrawlerWidget::setup()
 
     connect( tabbedFilteredView_, &QTabWidget::tabCloseRequested, this,
              &CrawlerWidget::closeFilteredView );
+
+    tabbedFilteredView_->tabBar()->setContextMenuPolicy( Qt::CustomContextMenu );
+    connect( tabbedFilteredView_->tabBar(), &QWidget::customContextMenuRequested, this,
+             [ this ]( const QPoint& pos ) {
+                 const int tabIndex = tabbedFilteredView_->tabBar()->tabAt( pos );
+                 if ( tabIndex < 0 )
+                     return;
+
+                 QMenu menu;
+                 auto* renameAction = menu.addAction( tr( "Rename tab" ) );
+                 connect( renameAction, &QAction::triggered, this, [ this, tabIndex ] {
+                     bool ok = false;
+                     auto newName = QInputDialog::getText(
+                         this, tr( "Rename tab" ), tr( "Tab name:" ), QLineEdit::Normal,
+                         tabbedFilteredView_->tabText( tabIndex ), &ok );
+                     if ( ok && !newName.isEmpty() ) {
+                         tabbedFilteredView_->setTabText( tabIndex, newName );
+                     }
+                 } );
+                 menu.exec( tabbedFilteredView_->tabBar()->mapToGlobal( pos ) );
+             } );
 
     connect( logMainView_, &LogMainView::saveDefaultSplitterSizes, this,
              &CrawlerWidget::saveSplitterSizes );
