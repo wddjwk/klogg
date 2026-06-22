@@ -59,6 +59,7 @@
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QTabBar>
 #include <QTextOption>
 #include <QJsonDocument>
@@ -498,10 +499,15 @@ void CrawlerWidget::toggleSearchExpand()
     expandedSearchEdit_->setPlainText( searchLineEdit_->currentText() );
     expandedSearchEdit_->setFont( searchLineEdit_->lineEdit()->font() );
 
-    const auto comboPos = searchLineEdit_->mapTo( this, QPoint( 0, 0 ) );
-    expandedSearchEdit_->setGeometry( comboPos.x(),
-                                      comboPos.y() + searchLineEdit_->height() + 2,
-                                      searchLineEdit_->width(), 120 );
+    // Reparent to the search box's parent (bottomWindow) so the QSplitter
+    // doesn't override our geometry
+    auto* parent = searchLineEdit_->parentWidget();
+    expandedSearchEdit_->setParent( parent );
+
+    // Position directly below the search combo box, using sibling coordinates
+    const auto& comboGeo = searchLineEdit_->geometry();
+    expandedSearchEdit_->setGeometry( comboGeo.x(), comboGeo.bottom() + 2,
+                                      comboGeo.width(), 120 );
     expandedSearchEdit_->raise();
     expandedSearchEdit_->show();
     expandedSearchEdit_->setFocus( Qt::ShortcutFocusReason );
@@ -525,15 +531,25 @@ void CrawlerWidget::collapseSearchExpand( bool triggerSearch )
 
 bool CrawlerWidget::eventFilter( QObject* obj, QEvent* event )
 {
-    if ( obj == expandedSearchEdit_ && event->type() == QEvent::KeyPress ) {
-        auto* keyEvent = static_cast<QKeyEvent*>( event );
-        if ( keyEvent->key() == Qt::Key_Return && !( keyEvent->modifiers() & Qt::ShiftModifier ) ) {
-            collapseSearchExpand( true );
-            return true;
+    if ( obj == expandedSearchEdit_ ) {
+        if ( event->type() == QEvent::KeyPress ) {
+            auto* keyEvent = static_cast<QKeyEvent*>( event );
+            if ( keyEvent->key() == Qt::Key_Return
+                 && !( keyEvent->modifiers() & Qt::ShiftModifier ) ) {
+                collapseSearchExpand( true );
+                return true;
+            }
+            if ( keyEvent->key() == Qt::Key_Escape ) {
+                collapseSearchExpand( false );
+                return true;
+            }
         }
-        if ( keyEvent->key() == Qt::Key_Escape ) {
-            collapseSearchExpand( false );
-            return true;
+        if ( event->type() == QEvent::MouseButtonPress ) {
+            auto* mouseEvent = static_cast<QMouseEvent*>( event );
+            if ( mouseEvent->button() == Qt::RightButton ) {
+                collapseSearchExpand( true );
+                return true;
+            }
         }
     }
     return QWidget::eventFilter( obj, event );
