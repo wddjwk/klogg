@@ -472,8 +472,7 @@ All shortucts can be configured from the shortcuts tab in options dialog.
 
 ## Mouse navigation
 
-Holding `Alt` while scrolling will scroll horizontally.
-Holding `Shift` while scrolling will scroll faster.
+Holding `Shift` while scrolling will scroll horizontally.
 
 ## Command line options
 
