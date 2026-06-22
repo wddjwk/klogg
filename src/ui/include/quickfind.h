@@ -257,6 +257,7 @@ class QuickFind : public QObject {
     // Scan future for async full-file scan
     QFuture<std::vector<MatchInfo>> scanFuture_;
     QFutureWatcher<std::vector<MatchInfo>> scanWatcher_;
+    bool scanResultsProcessed_ = false;
 
     // Private functions
     Portion doSearchForward( const Selection& selection, const QuickFindMatcher& matcher );

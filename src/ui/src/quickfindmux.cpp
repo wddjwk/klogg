@@ -153,6 +153,9 @@ void QuickFindMux::cancelSearch()
         if ( auto searchable = getSearchableWidget() )
             searchable->incrementalSearchAbort();
     }
+
+    pattern_->changeSearchPattern( QString() );
+    Q_EMIT matchCountChanged( 0, 0 );
 }
 
 //

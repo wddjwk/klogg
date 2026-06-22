@@ -190,6 +190,13 @@ void QuickFind::onSearchFutureReady()
 
 void QuickFind::onScanFutureReady()
 {
+    // If results were already processed synchronously by searchForward/
+    // searchBackward (non-incremental mode), skip to avoid re-navigation.
+    if ( scanResultsProcessed_ ) {
+        scanResultsProcessed_ = false;
+        return;
+    }
+
     allMatches_ = scanWatcher_.result();
 
     LOG_DEBUG << "QuickFind::onScanFutureReady - found " << allMatches_.size() << " matches";
@@ -257,6 +264,7 @@ void QuickFind::scanAllMatches( const QuickFindMatcher& matcher )
     } );
 
     scanWatcher_.setFuture( scanFuture_ );
+    scanResultsProcessed_ = false;
 }
 
 void QuickFind::navigateToMatch( int index )
@@ -400,6 +408,13 @@ void QuickFind::searchForward( Selection selection, QuickFindMatcher matcher )
     // Wait for any ongoing scan to complete so we use fresh results
     scanWatcher_.waitForFinished();
 
+    // If the scan finished but onScanFutureReady hasn't processed it yet
+    // (because we were blocking the event loop), populate allMatches_ now
+    if ( allMatches_.empty() && scanWatcher_.isFinished() ) {
+        allMatches_ = scanWatcher_.result();
+        scanResultsProcessed_ = true;
+    }
+
     if ( !allMatches_.empty() ) {
         // Navigate to the next match after the current selection, with wrap-around
         auto nextPos = selection.getNextPosition();
@@ -437,6 +452,12 @@ void QuickFind::searchBackward( Selection selection, QuickFindMatcher matcher )
 
     // Wait for any ongoing scan to complete so we use fresh results
     scanWatcher_.waitForFinished();
+
+    // If the scan finished but onScanFutureReady hasn't processed it yet
+    if ( allMatches_.empty() && scanWatcher_.isFinished() ) {
+        allMatches_ = scanWatcher_.result();
+        scanResultsProcessed_ = true;
+    }
 
     if ( !allMatches_.empty() ) {
         // Navigate to the previous match before the current selection, with wrap-around
