@@ -36,6 +36,8 @@ class SearchableWidgetInterface {
     virtual void searchForward() = 0;
     virtual void searchBackward() = 0;
 
+    virtual void scanQuickFind() = 0;
+
     virtual void incrementallySearchForward() = 0;
     virtual void incrementallySearchBackward() = 0;
     virtual void incrementalSearchStop() = 0;

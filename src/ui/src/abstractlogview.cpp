@@ -1277,6 +1277,11 @@ void AbstractLogView::searchBackward()
     searchUsingFunction( &QuickFind::searchBackward );
 }
 
+void AbstractLogView::scanQuickFind()
+{
+    quickFind_->scanForPattern( quickFindPattern_->getMatcher() );
+}
+
 void AbstractLogView::incrementallySearchForward()
 {
     searchUsingFunction( &QuickFind::incrementallySearchForward );

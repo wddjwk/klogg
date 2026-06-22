@@ -142,6 +142,8 @@ class QuickFind : public QObject {
     void searchForward( Selection selection, QuickFindMatcher matcher );
     void searchBackward( Selection selection, QuickFindMatcher matcher );
 
+    void scanForPattern( QuickFindMatcher matcher );
+
     void stopSearch();
 
   Q_SIGNALS:

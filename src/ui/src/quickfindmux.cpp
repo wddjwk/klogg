@@ -127,14 +127,23 @@ void QuickFindMux::setNewPattern( const QString& newPattern, bool ignoreCase, bo
     }
 }
 
-void QuickFindMux::confirmPattern( const QString& /*newPattern*/, bool /*ignoreCase*/,
-                                   bool /*isRegexSearch*/ )
+void QuickFindMux::confirmPattern( const QString& newPattern, bool ignoreCase,
+                                   bool isRegexSearch )
 {
-    // Pattern was already set by setNewPattern during typing.
-    // Just stop the incremental search.
-    if ( Configuration::get().isQuickfindIncremental() ) {
+    const auto& config = Configuration::get();
+
+    if ( config.isQuickfindIncremental() ) {
+        // Pattern was already set by setNewPattern during typing.
+        // Just stop the incremental search.
         if ( auto searchable = getSearchableWidget() )
             searchable->incrementalSearchStop();
+    }
+    else {
+        // Incremental is off — apply the pattern now and trigger a full scan
+        // so the subsequent searchForward/searchBackward call finds fresh results.
+        pattern_->changeSearchPattern( newPattern, ignoreCase, isRegexSearch );
+        if ( auto searchable = getSearchableWidget() )
+            searchable->scanQuickFind();
     }
 }
 

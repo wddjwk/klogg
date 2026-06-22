@@ -467,6 +467,14 @@ void QuickFind::searchBackward( Selection selection, QuickFindMatcher matcher )
     operationWatcher_.setFuture( operationFuture_ );
 }
 
+void QuickFind::scanForPattern( QuickFindMatcher matcher )
+{
+    LOG_DEBUG << "QuickFind::scanForPattern";
+
+    incrementalSearchStatus_ = IncrementalSearchStatus();
+    scanAllMatches( matcher );
+}
+
 Portion QuickFind::doSearchForward( const Selection& selection, const QuickFindMatcher& matcher )
 {
     return doSearchForward( selection.getNextPosition(), selection, matcher );

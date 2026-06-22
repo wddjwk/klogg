@@ -268,6 +268,9 @@ class AbstractLogView : public QAbstractScrollArea, public SearchableWidgetInter
     // Use the current QFP to go and select the previous match.
     void searchBackward() override;
 
+    // Trigger an async scan of all matches using the current pattern
+    void scanQuickFind() override;
+
     // Use the current QFP to go and select the next match (incremental)
     void incrementallySearchForward() override;
     // Use the current QFP to go and select the previous match (incremental)
