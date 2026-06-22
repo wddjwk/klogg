@@ -55,9 +55,12 @@
 #include <QAction>
 #include <QApplication>
 #include <QCompleter>
+#include <QFrame>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QTabBar>
+#include <QTextOption>
 #include <QJsonDocument>
 #include <QKeySequence>
 #include <QLineEdit>
@@ -482,8 +485,58 @@ void CrawlerWidget::saveAsPredefinedFilter()
 
 void CrawlerWidget::showSearchContextMenu()
 {
-    if ( searchLineContextMenu_ )
-        searchLineContextMenu_->exec( QCursor::pos( activeScreen( this ) ) );
+    toggleSearchExpand();
+}
+
+void CrawlerWidget::toggleSearchExpand()
+{
+    if ( expandedSearchEdit_->isVisible() ) {
+        collapseSearchExpand( true );
+        return;
+    }
+
+    expandedSearchEdit_->setPlainText( searchLineEdit_->currentText() );
+    expandedSearchEdit_->setFont( searchLineEdit_->lineEdit()->font() );
+
+    const auto comboPos = searchLineEdit_->mapTo( this, QPoint( 0, 0 ) );
+    expandedSearchEdit_->setGeometry( comboPos.x(),
+                                      comboPos.y() + searchLineEdit_->height() + 2,
+                                      searchLineEdit_->width(), 120 );
+    expandedSearchEdit_->raise();
+    expandedSearchEdit_->show();
+    expandedSearchEdit_->setFocus( Qt::ShortcutFocusReason );
+    expandedSearchEdit_->selectAll();
+}
+
+void CrawlerWidget::collapseSearchExpand( bool triggerSearch )
+{
+    if ( !expandedSearchEdit_->isVisible() )
+        return;
+
+    const auto text = expandedSearchEdit_->toPlainText();
+    expandedSearchEdit_->hide();
+    searchLineEdit_->setEditText( text );
+    searchLineEdit_->lineEdit()->setFocus();
+
+    if ( triggerSearch ) {
+        searchButton_->click();
+    }
+}
+
+bool CrawlerWidget::eventFilter( QObject* obj, QEvent* event )
+{
+    if ( obj == expandedSearchEdit_ && event->type() == QEvent::KeyPress ) {
+        auto* keyEvent = static_cast<QKeyEvent*>( event );
+        if ( keyEvent->key() == Qt::Key_Return && !( keyEvent->modifiers() & Qt::ShiftModifier ) ) {
+            collapseSearchExpand( true );
+            return true;
+        }
+        if ( keyEvent->key() == Qt::Key_Escape ) {
+            collapseSearchExpand( false );
+            return true;
+        }
+    }
+    return QWidget::eventFilter( obj, event );
 }
 
 // When receiving the 'newDataAvailable' signal from LogFilteredData
@@ -1107,6 +1160,15 @@ void CrawlerWidget::setup()
     searchLineEdit_->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
     searchLineEdit_->lineEdit()->setMaxLength( std::numeric_limits<int>::max() / 1024 );
     searchLineEdit_->setContentsMargins( 2, 2, 2, 2 );
+
+    expandedSearchEdit_ = new QPlainTextEdit( this );
+    expandedSearchEdit_->setWordWrapMode( QTextOption::WordWrap );
+    expandedSearchEdit_->setLineWrapMode( QPlainTextEdit::WidgetWidth );
+    expandedSearchEdit_->setMinimumHeight( 100 );
+    expandedSearchEdit_->setMaximumHeight( 300 );
+    expandedSearchEdit_->setFrameStyle( QFrame::Box | QFrame::Raised );
+    expandedSearchEdit_->hide();
+    expandedSearchEdit_->installEventFilter( this );
 
     QAction* clearSearchHistoryAction = new QAction( tr( "Clear search history" ), this );
     QAction* editSearchHistoryAction = new QAction( tr( "Edit search history" ), this );

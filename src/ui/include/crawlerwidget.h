@@ -48,6 +48,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSplitter>
 #include <QToolButton>
@@ -149,6 +150,7 @@ class CrawlerWidget : public QSplitter,
     void doSendAllStateSignals() override;
 
     void changeEvent( QEvent* event ) override;
+    bool eventFilter( QObject* obj, QEvent* event ) override;
 
   Q_SIGNALS:
     // Sent to signal the client load has progressed,
@@ -255,6 +257,9 @@ class CrawlerWidget : public QSplitter,
 
     // Search Context Menu
     void showSearchContextMenu();
+
+    void toggleSearchExpand();
+    void collapseSearchExpand( bool triggerSearch );
 
     // Called when a match is hovered on in the filtered view
     void mouseHoveredOverMatch( LineNumber line );
@@ -384,6 +389,7 @@ class CrawlerWidget : public QSplitter,
     QComboBox* searchLineEdit_;
     QMenu* searchLineContextMenu_;
     QCompleter* searchLineCompleter_;
+    QPlainTextEdit* expandedSearchEdit_;
 
     InfoLine* searchInfoLine_;
 
